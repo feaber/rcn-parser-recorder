@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Save parser input
+parse-in/
+
+# Generated parser output
+parse-out/
+
+# Extension vendor library (copy from node_modules — see README)
+rcn-extension/lib/

@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RCN — Analiza transakcji</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --blue-primary: #0052a5;
+    --blue-dark:    #003d7a;
+    --blue-light:   #e8f0fb;
+    --blue-mid:     #ccdff5;
+    --bg:           #f4f6fa;
+    --text:         #1a1a2e;
+    --muted:        #6b7280;
+    --border:       #d1dae8;
+    --white:        #ffffff;
+    --radius:       6px;
+    --shadow:       0 1px 4px rgba(0,82,165,0.10);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 14px;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Topbar ── */
+  header {
+    background: var(--blue-primary);
+    color: #fff;
+    padding: 0 24px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.20);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header svg { flex-shrink: 0; }
+  header h1 { font-size: 17px; font-weight: 700; letter-spacing: .3px; }
+  header span.subtitle { font-size: 12px; opacity: .75; margin-left: 4px; }
+  .btn-reload {
+    margin-left: auto;
+    background: rgba(255,255,255,.15);
+    border: 1px solid rgba(255,255,255,.35);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background .15s;
+    display: none;
+  }
+  .btn-reload:hover { background: rgba(255,255,255,.28); }
+
+  /* ── Main layout ── */
+  main { max-width: 1400px; margin: 0 auto; padding: 24px 20px; }
+
+  /* ── Drop zone ── */
+  #drop-area {
+    border: 2px dashed var(--blue-primary);
+    border-radius: 12px;
+    background: var(--white);
+    padding: 64px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    margin-bottom: 24px;
+  }
+  #drop-area.dragover { background: var(--blue-light); border-color: var(--blue-dark); }
+  #drop-area.hidden { display: none; }
+  #drop-area .drop-icon { font-size: 48px; margin-bottom: 12px; }
+  #drop-area h2 { font-size: 20px; font-weight: 600; color: var(--blue-primary); margin-bottom: 6px; }
+  #drop-area p { color: var(--muted); font-size: 13px; }
+  #drop-area .drop-hint { margin-top: 16px; font-size: 12px; color: var(--muted); }
+  #file-input { display: none; }
+
+  /* ── Dashboard ── */
+  #dashboard { display: none; }
+  #dashboard.visible { display: block; }
+
+  /* ── Stats cards ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 900px) { .stats-row { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 600px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+
+  .stat-card {
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+    border-top: 3px solid var(--blue-primary);
+  }
+  .stat-card .val {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--blue-primary);
+    line-height: 1.1;
+  }
+  .stat-card .lbl { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
+
+  /* ── Filter panel ── */
+  .filter-panel {
+    background: var(--white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    align-items: flex-end;
+  }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+  .filter-group input, .filter-group select {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: var(--white);
+    color: var(--text);
+    transition: border-color .15s;
+    min-width: 120px;
+  }
+  .filter-group input:focus, .filter-group select:focus {
+    outline: none;
+    border-color: var(--blue-primary);
+    box-shadow: 0 0 0 2px var(--blue-mid);
+  }
+  .filter-group.range-group { flex-direction: row; align-items: flex-end; gap: 6px; }
+  .filter-group.range-group > div { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group.range-group span { line-height: 30px; color: var(--muted); font-size: 12px; }
+
+  /* Checkboxes for buildings */
+  .buildings-group { display: flex; flex-direction: column; gap: 4px; }
+  .buildings-group label.group-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+  .buildings-checks { display: flex; gap: 10px; flex-wrap: wrap; }
+  .buildings-checks label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background .12s, border-color .12s;
+    user-select: none;
+  }
+  .buildings-checks label:hover { background: var(--blue-light); border-color: var(--blue-primary); }
+  .buildings-checks input[type=checkbox] { accent-color: var(--blue-primary); width: 14px; height: 14px; }
+  .buildings-checks label.checked { background: var(--blue-light); border-color: var(--blue-primary); }
+
+  .filter-actions { display: flex; gap: 8px; align-items: flex-end; margin-left: auto; }
+  .btn {
+    padding: 7px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: background .15s;
+  }
+  .btn-primary { background: var(--blue-primary); color: #fff; }
+  .btn-primary:hover { background: var(--blue-dark); }
+  .btn-secondary {
+    background: var(--white);
+    color: var(--blue-primary);
+    border: 1px solid var(--blue-primary);
+  }
+  .btn-secondary:hover { background: var(--blue-light); }
+
+  /* ── Table section ── */
+  .table-section {
+    background: var(--white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .table-toolbar {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .table-toolbar strong { color: var(--text); }
+
+  .table-wrapper {
+    max-height: 60vh;
+    overflow-y: auto;
+    overflow-x: auto;
+  }
+  /* Sticky header requires no overflow:hidden ancestor */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--blue-primary);
+    color: #fff;
+    padding: 9px 12px;
+    text-align: left;
+    white-space: nowrap;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    border-right: 1px solid rgba(255,255,255,.12);
+    transition: background .12s;
+  }
+  thead th:last-child { border-right: none; }
+  thead th:hover { background: var(--blue-dark); }
+  thead th.sorted { background: var(--blue-dark); }
+  .sort-icon { margin-left: 5px; opacity: .65; font-size: 11px; }
+  .sort-icon.active { opacity: 1; }
+
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .08s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:nth-child(even) { background: var(--blue-light); }
+  tbody tr:hover { background: var(--blue-mid); }
+  tbody td { padding: 7px 12px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+  tbody td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody td.null-val { color: var(--muted); font-style: italic; }
+
+  /* ── Pagination ── */
+  .pagination {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pagination-info { font-size: 13px; color: var(--muted); }
+  .pagination-controls { display: flex; align-items: center; gap: 6px; }
+  .page-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--white);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background .12s, border-color .12s;
+  }
+  .page-btn:hover:not(:disabled) { background: var(--blue-light); border-color: var(--blue-primary); color: var(--blue-primary); }
+  .page-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .page-num { font-size: 13px; color: var(--muted); padding: 0 6px; }
+  .per-page-select { padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+
+  /* ── Empty state ── */
+  .empty-state { text-align: center; padding: 48px; color: var(--muted); }
+  .empty-state .big { font-size: 32px; margin-bottom: 8px; }
+
+  /* scrollbar */
+  .table-wrapper::-webkit-scrollbar { height: 6px; width: 6px; }
+  .table-wrapper::-webkit-scrollbar-track { background: var(--bg); }
+  .table-wrapper::-webkit-scrollbar-thumb { background: var(--blue-mid); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+  </svg>
+  <h1>Rejestr Cen Nieruchomości</h1>
+  <span class="subtitle">— Analiza transakcji</span>
+  <button class="btn-reload" id="btn-reload" onclick="resetToUpload()">Wczytaj inny plik</button>
+</header>
+
+<main>
+  <!-- Drop zone -->
+  <div id="drop-area" onclick="document.getElementById('file-input').click()">
+    <div class="drop-icon">📂</div>
+    <h2>Przeciągnij plik CSV lub XLSX</h2>
+    <p>lub kliknij, aby wybrać plik z dysku</p>
+    <div class="drop-hint">Obsługiwane formaty: output.xlsx, output.csv</div>
+    <input type="file" id="file-input" accept=".xlsx,.csv" onchange="handleInputChange(event)">
+  </div>
+
+  <!-- Dashboard (hidden until file loaded) -->
+  <div id="dashboard">
+
+    <!-- Stats row -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="val" id="stat-count">—</div>
+        <div class="lbl">Transakcji</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-avg">—</div>
+        <div class="lbl">Śr. cena (PLN)</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-min">—</div>
+        <div class="lbl">Min. cena (PLN)</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-max">—</div>
+        <div class="lbl">Max. cena (PLN)</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-avgm2">—</div>
+        <div class="lbl">Śr. cena/m² (PLN)</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-panel">
+      <div class="filter-group">
+        <label>Data od</label>
+        <input type="date" id="f-date-from" oninput="applyFilters()">
+      </div>
+      <div class="filter-group">
+        <label>Data do</label>
+        <input type="date" id="f-date-to" oninput="applyFilters()">
+      </div>
+      <div class="filter-group">
+        <label>Cena min (PLN)</label>
+        <input type="number" id="f-price-min" placeholder="0" oninput="applyFilters()" style="min-width:100px">
+      </div>
+      <div class="filter-group">
+        <label>Cena max (PLN)</label>
+        <input type="number" id="f-price-max" placeholder="∞" oninput="applyFilters()" style="min-width:100px">
+      </div>
+
+      <div class="buildings-group">
+        <label class="group-lbl">Budynek</label>
+        <div class="buildings-checks" id="buildings-checks"></div>
+      </div>
+
+      <div class="filter-group">
+        <label>Rynek</label>
+        <select id="f-market" onchange="applyFilters()">
+          <option value="">Wszystkie</option>
+        </select>
+      </div>
+
+      <div class="filter-group" style="flex-grow:1; min-width:160px;">
+        <label>Szukaj</label>
+        <input type="text" id="f-search" placeholder="ID, ulica, miejscowość…" oninput="applyFilters()">
+      </div>
+
+      <div class="filter-actions">
+        <button class="btn btn-secondary" onclick="clearFilters()">Wyczyść</button>
+      </div>
+    </div>
+
+    <!-- Table section -->
+    <div class="table-section">
+      <div class="table-toolbar">
+        <span><strong id="filtered-count">0</strong> transakcji</span>
+      </div>
+      <div class="table-wrapper">
+        <table id="main-table">
+          <thead id="table-head"></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <div class="pagination-info" id="page-info"></div>
+        <div class="pagination-controls">
+          <button class="page-btn" id="btn-prev" onclick="changePage(-1)">&#8592; Poprzednia</button>
+          <span class="page-num" id="page-label"></span>
+          <button class="page-btn" id="btn-next" onclick="changePage(1)">Następna &#8594;</button>
+          <select class="per-page-select" id="per-page-select" onchange="changePerPage()">
+            <option value="25">25 / str.</option>
+            <option value="50">50 / str.</option>
+            <option value="100">100 / str.</option>
+            <option value="200">200 / str.</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- #dashboard -->
+</main>
+
+<script>
+'use strict';
+
+// ─── Column definitions ───────────────────────────────────────────────────────
+const COLUMNS = [
+  { key: 'Data transakcji',     label: 'Data',          type: 'date'    },
+  { key: 'Cena (PLN)',          label: 'Cena (PLN)',     type: 'number'  },
+  { key: 'Nr budynku',         label: 'Nr bud.',        type: 'string'  },
+  { key: 'Miejscowość',        label: 'Miejscowość',    type: 'string'  },
+  { key: 'Ulica',              label: 'Ulica',          type: 'string'  },
+  { key: 'Nr budynku adres',   label: 'Nr bud. (adr.)', type: 'string'  },
+  { key: 'Nr lokalu',          label: 'Nr lok.',        type: 'string'  },
+  { key: 'Pow. użytkowa (m²)', label: 'Pow. użytk.',   type: 'number'  },
+  { key: 'Pow. gruntu (m²)',   label: 'Pow. gruntu',   type: 'number'  },
+  { key: 'Cena/m² (PLN)',      label: 'Cena/m²',       type: 'number'  },
+  { key: 'Rodzaj rynku',       label: 'Rynek',          type: 'string'  },
+  { key: 'Rodzaj transakcji',  label: 'Rodzaj trans.',  type: 'string'  },
+  { key: 'Rodzaj nieruchomości', label: 'Rodzaj nier.', type: 'string'  },
+  { key: 'Rodzaj budynku',     label: 'Rodzaj bud.',    type: 'string'  },
+  { key: 'Prawo',              label: 'Prawo',          type: 'string'  },
+  { key: 'Udział',             label: 'Udział',         type: 'string'  },
+  { key: 'Sprzedający',        label: 'Sprzedający',    type: 'string'  },
+  { key: 'Kupujący',           label: 'Kupujący',       type: 'string'  },
+  { key: 'ID transakcji',      label: 'ID transakcji',  type: 'string'  },
+  { key: 'ID budynku',         label: 'ID budynku',     type: 'string'  },
+  { key: 'Plik źródłowy',     label: 'Plik',           type: 'string'  },
+];
+
+const NUMERIC_COLS = ['Cena (PLN)', 'Pow. użytkowa (m²)', 'Pow. gruntu (m²)', 'Cena/m² (PLN)'];
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let allRows = [];
+let filteredRows = [];
+let sortCol = 'Data transakcji';
+let sortAsc = false;
+let currentPage = 1;
+let perPage = 25;
+let filters = {
+  dateFrom: '', dateTo: '',
+  priceMin: '', priceMax: '',
+  search: '',
+  buildings: new Set(),
+  market: '',
+};
+
+// ─── Drag & drop ──────────────────────────────────────────────────────────────
+const dropArea = document.getElementById('drop-area');
+
+dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('dragover'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('dragover'));
+dropArea.addEventListener('drop', e => {
+  e.preventDefault();
+  dropArea.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+
+function handleInputChange(e) {
+  const file = e.target.files[0];
+  if (file) handleFile(file);
+}
+
+// ─── File handling ────────────────────────────────────────────────────────────
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const data = new Uint8Array(e.target.result);
+    const wb = XLSX.read(data, { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false });
+
+    // Re-parse numeric columns (sheet_to_json with raw:false gives strings)
+    allRows = raw.map(row => {
+      const r = Object.assign({}, row);
+      for (const col of NUMERIC_COLS) {
+        if (r[col] !== null && r[col] !== undefined && r[col] !== '') {
+          const n = Number(String(r[col]).replace(/\s/g, '').replace(',', '.'));
+          r[col] = isNaN(n) ? null : n;
+        } else {
+          r[col] = null;
+        }
+      }
+      return r;
+    });
+
+    initDashboard();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ─── Init dashboard ───────────────────────────────────────────────────────────
+function initDashboard() {
+  // Show dashboard, hide drop zone
+  document.getElementById('drop-area').classList.add('hidden');
+  document.getElementById('dashboard').classList.add('visible');
+  document.getElementById('btn-reload').style.display = 'flex';
+
+  // Build table header (once)
+  buildTableHeader();
+
+  // Build building checkboxes from unique values
+  const buildSet = new Set(allRows.map(r => r['Nr budynku']).filter(Boolean));
+  const builds = Array.from(buildSet).sort();
+  filters.buildings = new Set(builds); // all checked by default
+
+  const checksContainer = document.getElementById('buildings-checks');
+  checksContainer.innerHTML = '';
+  for (const b of builds) {
+    const lbl = document.createElement('label');
+    lbl.innerHTML = `<input type="checkbox" value="${b}" checked onchange="onBuildingCheck(this)"> ${b}`;
+    lbl.classList.add('checked');
+    checksContainer.appendChild(lbl);
+  }
+
+  // Build market dropdown
+  const markets = Array.from(new Set(allRows.map(r => r['Rodzaj rynku']).filter(Boolean))).sort();
+  const marketSel = document.getElementById('f-market');
+  marketSel.innerHTML = '<option value="">Wszystkie</option>';
+  for (const m of markets) {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    marketSel.appendChild(opt);
+  }
+
+  // Set default date range from data
+  const dates = allRows.map(r => r['Data transakcji']).filter(Boolean).sort();
+  if (dates.length) {
+    document.getElementById('f-date-from').value = dates[0];
+    document.getElementById('f-date-to').value = dates[dates.length - 1];
+    filters.dateFrom = dates[0];
+    filters.dateTo = dates[dates.length - 1];
+  }
+
+  applyFilters();
+}
+
+function buildTableHeader() {
+  const thead = document.getElementById('table-head');
+  const tr = document.createElement('tr');
+  for (const col of COLUMNS) {
+    const th = document.createElement('th');
+    th.dataset.key = col.key;
+    th.dataset.type = col.type;
+    const icon = document.createElement('span');
+    icon.className = 'sort-icon';
+    icon.textContent = '↕';
+    th.textContent = col.label;
+    th.appendChild(icon);
+    th.onclick = () => onSort(col.key);
+    tr.appendChild(th);
+  }
+  thead.innerHTML = '';
+  thead.appendChild(tr);
+}
+
+// ─── Sorting ──────────────────────────────────────────────────────────────────
+function onSort(key) {
+  if (sortCol === key) {
+    sortAsc = !sortAsc;
+  } else {
+    sortCol = key;
+    sortAsc = true;
+  }
+  currentPage = 1;
+  renderTable();
+}
+
+function sortRows(rows) {
+  const colDef = COLUMNS.find(c => c.key === sortCol);
+  const type = colDef ? colDef.type : 'string';
+
+  return [...rows].sort((a, b) => {
+    let va = a[sortCol];
+    let vb = b[sortCol];
+
+    // Nulls always last
+    if (va === null || va === undefined || va === '') return 1;
+    if (vb === null || vb === undefined || vb === '') return -1;
+
+    let cmp;
+    if (type === 'number') {
+      cmp = Number(va) - Number(vb);
+    } else {
+      // date and string: localeCompare with numeric option
+      cmp = String(va).localeCompare(String(vb), 'pl', { numeric: true });
+    }
+    return sortAsc ? cmp : -cmp;
+  });
+}
+
+// ─── Filters ──────────────────────────────────────────────────────────────────
+function onBuildingCheck(checkbox) {
+  const val = checkbox.value;
+  if (checkbox.checked) {
+    filters.buildings.add(val);
+    checkbox.parentElement.classList.add('checked');
+  } else {
+    filters.buildings.delete(val);
+    checkbox.parentElement.classList.remove('checked');
+  }
+  applyFilters();
+}
+
+function applyFilters() {
+  // Read filter values
+  filters.dateFrom = document.getElementById('f-date-from').value;
+  filters.dateTo   = document.getElementById('f-date-to').value;
+  filters.priceMin = document.getElementById('f-price-min').value;
+  filters.priceMax = document.getElementById('f-price-max').value;
+  filters.search   = document.getElementById('f-search').value.toLowerCase().trim();
+  filters.market   = document.getElementById('f-market').value;
+
+  filteredRows = allRows.filter(row => {
+    // Date filter
+    const dt = row['Data transakcji'] || '';
+    if (filters.dateFrom && dt && dt < filters.dateFrom) return false;
+    if (filters.dateTo   && dt && dt > filters.dateTo)   return false;
+
+    // Price filter
+    const price = row['Cena (PLN)'];
+    if (filters.priceMin !== '' && (price === null || price < Number(filters.priceMin))) return false;
+    if (filters.priceMax !== '' && (price === null || price > Number(filters.priceMax))) return false;
+
+    // Buildings filter (strict: empty set = 0 rows)
+    const bud = row['Nr budynku'] || '';
+    if (!filters.buildings.has(bud)) return false;
+
+    // Market filter
+    if (filters.market && row['Rodzaj rynku'] !== filters.market) return false;
+
+    // Text search: ID, Ulica, Miejscowość, Nr budynku adres
+    if (filters.search) {
+      const haystack = [
+        row['ID transakcji'],
+        row['Ulica'],
+        row['Miejscowość'],
+        row['Nr budynku adres'],
+        row['Nr lokalu'],
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(filters.search)) return false;
+    }
+
+    return true;
+  });
+
+  updateStats();
+  currentPage = 1;
+  renderTable();
+}
+
+function clearFilters() {
+  document.getElementById('f-date-from').value = '';
+  document.getElementById('f-date-to').value = '';
+  document.getElementById('f-price-min').value = '';
+  document.getElementById('f-price-max').value = '';
+  document.getElementById('f-search').value = '';
+  document.getElementById('f-market').value = '';
+  filters.dateFrom = '';
+  filters.dateTo = '';
+  filters.priceMin = '';
+  filters.priceMax = '';
+  filters.search = '';
+  filters.market = '';
+
+  // Check all buildings
+  document.querySelectorAll('#buildings-checks input[type=checkbox]').forEach(cb => {
+    cb.checked = true;
+    cb.parentElement.classList.add('checked');
+    filters.buildings.add(cb.value);
+  });
+
+  applyFilters();
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+function updateStats() {
+  const prices = filteredRows.map(r => r['Cena (PLN)']).filter(v => typeof v === 'number' && !isNaN(v));
+  const m2prices = filteredRows.map(r => r['Cena/m² (PLN)']).filter(v => typeof v === 'number' && !isNaN(v));
+
+  const count = filteredRows.length;
+  const avg   = prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : null;
+  const min   = prices.length ? Math.min(...prices) : null;
+  const max   = prices.length ? Math.max(...prices) : null;
+  const avgM2 = m2prices.length ? Math.round(m2prices.reduce((a, b) => a + b, 0) / m2prices.length) : null;
+
+  document.getElementById('stat-count').textContent = fmt(count);
+  document.getElementById('stat-avg').textContent   = avg   !== null ? fmt(avg)   : '—';
+  document.getElementById('stat-min').textContent   = min   !== null ? fmt(min)   : '—';
+  document.getElementById('stat-max').textContent   = max   !== null ? fmt(max)   : '—';
+  document.getElementById('stat-avgm2').textContent = avgM2 !== null ? fmt(avgM2) : '—';
+}
+
+// ─── Table render ─────────────────────────────────────────────────────────────
+function renderTable() {
+  // Update sort indicators
+  document.querySelectorAll('#table-head th').forEach(th => {
+    th.classList.remove('sorted');
+    const icon = th.querySelector('.sort-icon');
+    if (th.dataset.key === sortCol) {
+      th.classList.add('sorted');
+      icon.textContent = sortAsc ? '↑' : '↓';
+      icon.classList.add('active');
+    } else {
+      icon.textContent = '↕';
+      icon.classList.remove('active');
+    }
+  });
+
+  const sorted = sortRows(filteredRows);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
+  currentPage = Math.min(currentPage, totalPages);
+  const start = (currentPage - 1) * perPage;
+  const pageRows = sorted.slice(start, start + perPage);
+
+  const tbody = document.getElementById('table-body');
+
+  if (sorted.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${COLUMNS.length}" class="empty-state">
+      <div class="big">🔍</div>Brak wyników dla wybranych filtrów</td></tr>`;
+  } else {
+    const fragment = document.createDocumentFragment();
+    for (const row of pageRows) {
+      const tr = document.createElement('tr');
+      for (const col of COLUMNS) {
+        const td = document.createElement('td');
+        const val = row[col.key];
+        if (val === null || val === undefined || val === '') {
+          td.textContent = '—';
+          td.className = 'null-val';
+        } else if (col.type === 'number') {
+          td.textContent = fmt(val);
+          td.className = 'numeric';
+        } else {
+          td.textContent = String(val);
+        }
+        tr.appendChild(td);
+      }
+      fragment.appendChild(tr);
+    }
+    tbody.innerHTML = '';
+    tbody.appendChild(fragment);
+  }
+
+  // Update count & pagination
+  document.getElementById('filtered-count').textContent = fmt(sorted.length);
+  document.getElementById('page-info').textContent =
+    sorted.length > 0
+      ? `${fmt(start + 1)}–${fmt(Math.min(start + perPage, sorted.length))} z ${fmt(sorted.length)}`
+      : '0 wyników';
+  document.getElementById('page-label').textContent = `Strona ${currentPage} / ${totalPages}`;
+  document.getElementById('btn-prev').disabled = currentPage <= 1;
+  document.getElementById('btn-next').disabled = currentPage >= totalPages;
+}
+
+// ─── Pagination ───────────────────────────────────────────────────────────────
+function changePage(delta) {
+  currentPage += delta;
+  renderTable();
+}
+
+function changePerPage() {
+  perPage = Number(document.getElementById('per-page-select').value);
+  currentPage = 1;
+  renderTable();
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function fmt(n) {
+  if (n === null || n === undefined) return '—';
+  return new Intl.NumberFormat('pl-PL').format(n);
+}
+
+function resetToUpload() {
+  allRows = [];
+  filteredRows = [];
+  sortCol = 'Data transakcji';
+  sortAsc = false;
+  currentPage = 1;
+  perPage = 25;
+  filters = { dateFrom: '', dateTo: '', priceMin: '', priceMax: '', search: '', buildings: new Set(), market: '' };
+
+  document.getElementById('dashboard').classList.remove('visible');
+  document.getElementById('drop-area').classList.remove('hidden');
+  document.getElementById('btn-reload').style.display = 'none';
+  document.getElementById('file-input').value = '';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RCN — Analiza transakcji</title>
+<script src="lib/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --blue-primary: #0052a5;
+    --blue-dark:    #003d7a;
+    --blue-light:   #e8f0fb;
+    --blue-mid:     #ccdff5;
+    --bg:           #f4f6fa;
+    --text:         #1a1a2e;
+    --muted:        #6b7280;
+    --border:       #d1dae8;
+    --white:        #ffffff;
+    --radius:       6px;
+    --shadow:       0 1px 4px rgba(0,82,165,0.10);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 14px;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Topbar ── */
+  header {
+    background: var(--blue-primary);
+    color: #fff;
+    padding: 0 24px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.20);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header svg { flex-shrink: 0; }
+  header h1 { font-size: 17px; font-weight: 700; letter-spacing: .3px; }
+  header span.subtitle { font-size: 12px; opacity: .75; margin-left: 4px; }
+  .btn-reload {
+    margin-left: auto;
+    background: rgba(255,255,255,.15);
+    border: 1px solid rgba(255,255,255,.35);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background .15s;
+    display: none;
+  }
+  .btn-reload:hover { background: rgba(255,255,255,.28); }
+
+  /* ── Main layout ── */
+  main { max-width: 1400px; margin: 0 auto; padding: 24px 20px; }
+
+  /* ── Drop zone ── */
+  #drop-area {
+    border: 2px dashed var(--blue-primary);
+    border-radius: 12px;
+    background: var(--white);
+    padding: 64px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    margin-bottom: 24px;
+  }
+  #drop-area.dragover { background: var(--blue-light); border-color: var(--blue-dark); }
+  #drop-area.hidden { display: none; }
+  #drop-area .drop-icon { font-size: 48px; margin-bottom: 12px; }
+  #drop-area h2 { font-size: 20px; font-weight: 600; color: var(--blue-primary); margin-bottom: 6px; }
+  #drop-area p { color: var(--muted); font-size: 13px; }
+  #drop-area .drop-hint { margin-top: 16px; font-size: 12px; color: var(--muted); }
+  #file-input { display: none; }
+
+  /* ── Dashboard ── */
+  #dashboard { display: none; }
+  #dashboard.visible { display: block; }
+
+  /* ── Stats cards ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 900px) { .stats-row { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 600px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+
+  .stat-card {
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+    border-top: 3px solid var(--blue-primary);
+  }
+  .stat-card .val {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--blue-primary);
+    line-height: 1.1;
+  }
+  .stat-card .lbl { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
+
+  /* ── Filter panel ── */
+  .filter-panel {
+    background: var(--white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    align-items: flex-end;
+  }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+  .filter-group input, .filter-group select {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: var(--white);
+    color: var(--text);
+    transition: border-color .15s;
+    min-width: 120px;
+  }
+  .filter-group input:focus, .filter-group select:focus {
+    outline: none;
+    border-color: var(--blue-primary);
+    box-shadow: 0 0 0 2px var(--blue-mid);
+  }
+  .filter-group.range-group { flex-direction: row; align-items: flex-end; gap: 6px; }
+  .filter-group.range-group > div { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group.range-group span { line-height: 30px; color: var(--muted); font-size: 12px; }
+
+  /* Checkboxes for buildings */
+  .buildings-group { display: flex; flex-direction: column; gap: 4px; }
+  .buildings-group label.group-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+  .buildings-checks { display: flex; gap: 10px; flex-wrap: wrap; }
+  .buildings-checks label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background .12s, border-color .12s;
+    user-select: none;
+  }
+  .buildings-checks label:hover { background: var(--blue-light); border-color: var(--blue-primary); }
+  .buildings-checks input[type=checkbox] { accent-color: var(--blue-primary); width: 14px; height: 14px; }
+  .buildings-checks label.checked { background: var(--blue-light); border-color: var(--blue-primary); }
+
+  .filter-actions { display: flex; gap: 8px; align-items: flex-end; margin-left: auto; }
+  .btn {
+    padding: 7px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: background .15s;
+  }
+  .btn-primary { background: var(--blue-primary); color: #fff; }
+  .btn-primary:hover { background: var(--blue-dark); }
+  .btn-secondary {
+    background: var(--white);
+    color: var(--blue-primary);
+    border: 1px solid var(--blue-primary);
+  }
+  .btn-secondary:hover { background: var(--blue-light); }
+
+  /* ── Table section ── */
+  .table-section {
+    background: var(--white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .table-toolbar {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .table-toolbar strong { color: var(--text); }
+
+  .table-wrapper {
+    max-height: 60vh;
+    overflow-y: auto;
+    overflow-x: auto;
+  }
+  /* Sticky header requires no overflow:hidden ancestor */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--blue-primary);
+    color: #fff;
+    padding: 9px 12px;
+    text-align: left;
+    white-space: nowrap;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    border-right: 1px solid rgba(255,255,255,.12);
+    transition: background .12s;
+  }
+  thead th:last-child { border-right: none; }
+  thead th:hover { background: var(--blue-dark); }
+  thead th.sorted { background: var(--blue-dark); }
+  .sort-icon { margin-left: 5px; opacity: .65; font-size: 11px; }
+  .sort-icon.active { opacity: 1; }
+
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .08s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:nth-child(even) { background: var(--blue-light); }
+  tbody tr:hover { background: var(--blue-mid); }
+  tbody td { padding: 7px 12px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+  tbody td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody td.null-val { color: var(--muted); font-style: italic; }
+
+  /* ── Pagination ── */
+  .pagination {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pagination-info { font-size: 13px; color: var(--muted); }
+  .pagination-controls { display: flex; align-items: center; gap: 6px; }
+  .page-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--white);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background .12s, border-color .12s;
+  }
+  .page-btn:hover:not(:disabled) { background: var(--blue-light); border-color: var(--blue-primary); color: var(--blue-primary); }
+  .page-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .page-num { font-size: 13px; color: var(--muted); padding: 0 6px; }
+  .per-page-select { padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+
+  /* ── Empty state ── */
+  .empty-state { text-align: center; padding: 48px; color: var(--muted); }
+  .empty-state .big { font-size: 32px; margin-bottom: 8px; }
+
+  /* scrollbar */
+  .table-wrapper::-webkit-scrollbar { height: 6px; width: 6px; }
+  .table-wrapper::-webkit-scrollbar-track { background: var(--bg); }
+  .table-wrapper::-webkit-scrollbar-thumb { background: var(--blue-mid); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+  </svg>
+  <h1>Rejestr Cen Nieruchomości</h1>
+  <span class="subtitle">— Analiza transakcji</span>
+  <button class="btn-reload" id="btn-reload">Wczytaj inny plik</button>
+</header>
+
+<main>
+  <!-- Drop zone -->
+  <div id="drop-area">
+    <div class="drop-icon">📂</div>
+    <h2>Przeciągnij plik CSV lub XLSX</h2>
+    <p>lub kliknij, aby wybrać plik z dysku</p>
+    <div class="drop-hint">Obsługiwane formaty: output.xlsx, output.csv</div>
+    <input type="file" id="file-input" accept=".xlsx,.csv">
+  </div>
+
+  <!-- Dashboard (hidden until file loaded) -->
+  <div id="dashboard">
+
+    <!-- Stats row -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="val" id="stat-count">—</div>
+        <div class="lbl">Transakcji</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-avg">—</div>
+        <div class="lbl">Śr. cena (PLN)</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-min">—</div>
+        <div class="lbl">Min. cena (PLN)</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-max">—</div>
+        <div class="lbl">Max. cena (PLN)</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-avgm2">—</div>
+        <div class="lbl">Śr. cena/m² (PLN)</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-panel">
+      <div class="filter-group">
+        <label>Data od</label>
+        <input type="date" id="f-date-from">
+      </div>
+      <div class="filter-group">
+        <label>Data do</label>
+        <input type="date" id="f-date-to">
+      </div>
+      <div class="filter-group">
+        <label>Cena min (PLN)</label>
+        <input type="number" id="f-price-min" placeholder="0" style="min-width:100px">
+      </div>
+      <div class="filter-group">
+        <label>Cena max (PLN)</label>
+        <input type="number" id="f-price-max" placeholder="∞" style="min-width:100px">
+      </div>
+
+      <div class="buildings-group">
+        <label class="group-lbl">Budynek</label>
+        <div class="buildings-checks" id="buildings-checks"></div>
+      </div>
+
+      <div class="filter-group">
+        <label>Rynek</label>
+        <select id="f-market">
+          <option value="">Wszystkie</option>
+        </select>
+      </div>
+
+      <div class="filter-group" style="flex-grow:1; min-width:160px;">
+        <label>Szukaj</label>
+        <input type="text" id="f-search" placeholder="ID, ulica, miejscowość…">
+      </div>
+
+      <div class="filter-actions">
+        <button class="btn btn-secondary" id="btn-clear-filters">Wyczyść</button>
+      </div>
+    </div>
+
+    <!-- Table section -->
+    <div class="table-section">
+      <div class="table-toolbar">
+        <span><strong id="filtered-count">0</strong> transakcji</span>
+      </div>
+      <div class="table-wrapper">
+        <table id="main-table">
+          <thead id="table-head"></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <div class="pagination-info" id="page-info"></div>
+        <div class="pagination-controls">
+          <button class="page-btn" id="btn-prev">&#8592; Poprzednia</button>
+          <span class="page-num" id="page-label"></span>
+          <button class="page-btn" id="btn-next">Następna &#8594;</button>
+          <select class="per-page-select" id="per-page-select">
+            <option value="25">25 / str.</option>
+            <option value="50">50 / str.</option>
+            <option value="100">100 / str.</option>
+            <option value="200">200 / str.</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- #dashboard -->
+</main>
+
+<script src="dashboard.js"></script>
+</body>
+</html>
