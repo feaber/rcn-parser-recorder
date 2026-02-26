@@ -53,3 +53,11 @@ When I open the dashboard from extension I see this error in chrome extension pa
 ---
 
 Our parser output file with "YYYYMMDD-HHmmss.xlsx" name. Can we make so the extension use same pattern instead of "rcn_transakcje.xlsx"?
+
+---
+
+Can you try to create similar extension but for FireFox?
+
+---
+
+Ok if the extension will be almost the same lets not duplicate the code. If only manifest file will change a bit the plan will be to create new folder "rcn-extension-firefox" with only that manifest and describe in @README.md how to make this all together. But first lets test it in firefox. I have modified the manifest in original folder like you described. But I see this error when I try to load the extension: "background.service_worker is currently disabled. Add background.scripts."

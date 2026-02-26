@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "RCN Recorder",
+  "version": "1.0",
+  "description": "Nagrywa transakcje z Rejestru Cen Nieruchomości",
+  "permissions": ["storage", "scripting", "tabs"],
+  "host_permissions": ["https://mapy.geoportal.gov.pl/*"],
+  "background": { "scripts": ["background.js"] },
+  "content_scripts": [
+    {
+      "matches": ["https://mapy.geoportal.gov.pl/*"],
+      "js": ["interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://mapy.geoportal.gov.pl/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "16":  "icons/icon16.png",
+    "32":  "icons/icon32.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "RCN Recorder",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "32":  "icons/icon32.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "rcn-recorder@geoportal",
+      "strict_min_version": "128.0"
+    }
+  }
+}

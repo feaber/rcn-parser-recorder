@@ -10,6 +10,7 @@ Two independent tools that share the same 21-column XLSX schema:
 |------|----------|
 | `parse.js` | Batch-convert saved HTML exports → timestamped XLSX |
 | `rcn-extension/` | Chrome extension — capture transactions live on the map |
+| `rcn-extension-firefox/` | Firefox extension — same code, Firefox-specific manifest only |
 | `dashboard.html` | Offline dashboard — load any output XLSX for filtering/viewing |
 
 ---
@@ -17,7 +18,8 @@ Two independent tools that share the same 21-column XLSX schema:
 ## Requirements
 
 - **Node.js** ≥ 18
-- **Chrome** ≥ 111 (for the extension)
+- **Chrome** ≥ 111 (for the Chrome extension)
+- **Firefox** ≥ 128 (for the Firefox extension)
 
 ---
 
@@ -47,7 +49,7 @@ interactive offline view.
 
 ---
 
-## 2 — Chrome Extension (live capture)
+## 2 — Chrome / Firefox Extension (live capture)
 
 Records transactions in real time as you click buildings on the map, with
 automatic deduplication. Downloads all collected data as XLSX.
@@ -71,6 +73,32 @@ cp node_modules/xlsx/dist/xlsx.full.min.js rcn-extension/lib/
 3. Click **Load unpacked** and select the `rcn-extension/` folder
 
 The house icon appears in the Chrome toolbar.
+
+### Load in Firefox
+
+Assemble the Firefox extension folder by copying the Chrome extension files into it, then
+restore the Firefox-specific manifest (the copy step overwrites it with the Chrome one):
+
+```bash
+# Windows
+xcopy /E /Y rcn-extension\* rcn-extension-firefox\
+git checkout rcn-extension-firefox\manifest.json
+
+# macOS / Linux
+cp -r rcn-extension/* rcn-extension-firefox/
+git checkout rcn-extension-firefox/manifest.json
+```
+
+> `rcn-extension-firefox/manifest.json` is the only file committed in that folder.
+> All other files are copied from `rcn-extension/` and are git-ignored.
+
+Then load in Firefox:
+
+1. Open `about:debugging` → **This Firefox**
+2. Click **Load Temporary Add-on…**
+3. Select `rcn-extension-firefox/manifest.json`
+
+The icon appears in the Firefox toolbar.
 
 ### Usage
 
@@ -124,7 +152,7 @@ Both tools produce files with this 21-column layout:
 ├── icon.png                # Extension icon source
 ├── make_icons.js           # Regenerate extension icons from icon.png: node make_icons.js
 ├── rcn-extension/
-│   ├── manifest.json
+│   ├── manifest.json       # Chrome MV3 manifest (service_worker)
 │   ├── background.js       # Service worker: state, badge, messaging
 │   ├── interceptor.js      # MAIN world: patches fetch + XHR
 │   ├── bridge.js           # ISOLATED world: HTML parsing, relay to background
@@ -133,6 +161,9 @@ Both tools produce files with this 21-column layout:
 │   ├── dashboard.js        # Dashboard logic (extracted for MV3 CSP compliance)
 │   ├── icons/              # PNG icons (16, 32, 48, 128 px)
 │   └── lib/                # xlsx.full.min.js — copy from node_modules (see setup)
+├── rcn-extension-firefox/
+│   └── manifest.json       # Firefox MV3 manifest (scripts + gecko settings)
+│                           # All other files are copied from rcn-extension/ — see setup
 └── package.json
 ```
 

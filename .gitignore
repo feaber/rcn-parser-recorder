@@ -9,3 +9,7 @@ parse-out/
 
 # Extension vendor library (copy from node_modules — see README)
 rcn-extension/lib/
+
+# Firefox extension — only manifest.json is committed; all other files are copied from rcn-extension/
+rcn-extension-firefox/*
+!rcn-extension-firefox/manifest.json
