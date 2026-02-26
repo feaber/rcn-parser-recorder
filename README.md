@@ -102,7 +102,7 @@ The icon appears in the Firefox toolbar.
 
 ### Usage
 
-1. Navigate to [mapy.geoportal.gov.pl](https://mapy.geoportal.gov.pl)
+1. Navigate to [https://mapy.geoportal.gov.pl/imapnext/imap](https://mapy.geoportal.gov.pl/imapnext/imap)
 2. Open the extension popup → click **▶ Rozpocznij nagrywanie**
 3. Click buildings on the map — transactions are captured automatically
 4. Click **↓ Pobierz XLSX** to download
